@@ -36,7 +36,7 @@ This initial DAG is responsible for populating the local data directory.
 * **Task 1 (`set_kaggle_api_permissions`):** A `BashOperator` task that sets the correct file permissions (`600`) for the `kaggle.json` API key, which is a requirement for the Kaggle CLI to function securely.
 * **Task 2 (`download_and_unzip_dataset`):** A `BashOperator` that executes the Kaggle CLI command to download the dataset and unzip it directly into the shared `/data` volume.
 
-### `etl_tmdb_to_dwh.py` - ETL and Data Mart
+### `etl_tmdb_to_dwh.py` - ETL
 This is the main pipeline that processes the data and create the DWH tables. It runs in three stages:
 
 * **Task 1 (`create_dwh_tables`):** This task connects to ClickHouse and executes a series of `CREATE TABLE IF NOT EXISTS` statements to create a lists of DWH tables.
