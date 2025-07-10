@@ -1,0 +1,105 @@
+version: '3'
+
+x-airflow-common:
+  &airflow-common
+  image: 'tmdb-pipeline-airflow:latest'
+  build: .
+  deploy:
+    resources:
+      limits:
+        memory: 2G
+  environment:
+    - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+    - AIRFLOW__CORE__LOAD_EXAMPLES=false
+    - AIRFLOW__CORE__ENABLE_XCOM_PICKLING=true
+    - AIRFLOW_UID=${AIRFLOW_UID:-50000}
+    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+    - ./data:/opt/airflow/data
+    - ./kaggle.json:/home/airflow/.kaggle/kaggle.json
+
+services:
+  postgres:
+    image: postgres:13
+    container_name: postgres_tmdb
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - "2345:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow_init_tmdb
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        until airflow db check; do
+          echo "Waiting for database to be ready..."
+          sleep 5
+        done
+        airflow db migrate
+        if ! airflow users list | grep -q "airflow"; then
+          airflow users create \
+            --username airflow \
+            --password ${AIRFLOW_PASSWORD} \
+            --firstname Admin \
+            --lastname User \
+            --role Admin \
+            --email admin@example.com
+        fi
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow_webserver_tmdb
+    command: webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow_scheduler_tmdb
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "${HOSTNAME}"']
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  clickhouse-server:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: clickhouse_server_tmdb
+    environment:
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+volumes:
+  clickhouse_data:

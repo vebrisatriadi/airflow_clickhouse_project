@@ -1,0 +1,6 @@
+/logs
+/data
+*__pycache__*
+*.DS_Store*
+kaggle.json
+.env
