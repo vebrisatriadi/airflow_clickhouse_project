@@ -17,7 +17,7 @@ def get_clickhouse_client():
 @dag(dag_id='etl_tmdb_to_dwh', start_date=pendulum.datetime(2025, 7, 10, tz="Asia/Jakarta"), schedule=None, catchup=False)
 def etl_tmdb_to_dwh_dag_complete():
     @task
-    def create_dwh_tables():
+    def create_dwh_tables() -> bool:
         client = get_clickhouse_client()
         SQLS = [
             "CREATE TABLE IF NOT EXISTS default.fact_movies ( movie_id UInt64, title String, release_date Nullable(Date32), revenue UInt64, budget UInt64, popularity Float32, vote_average Float32, vote_count UInt32, runtime Nullable(UInt16) ) ENGINE = MergeTree() ORDER BY movie_id;",
@@ -26,7 +26,8 @@ def etl_tmdb_to_dwh_dag_complete():
             "CREATE TABLE IF NOT EXISTS default.bridge_movie_genres ( movie_id UInt64, genre_id UInt32 ) ENGINE = MergeTree() ORDER BY (movie_id, genre_id);",
             "CREATE TABLE IF NOT EXISTS default.bridge_movie_companies ( movie_id UInt64, company_id UInt64 ) ENGINE = MergeTree() ORDER BY (movie_id, company_id);"
         ]
-        for sql in SQLS: client.command(sql)
+        for sql in SQLS:
+            client.command(sql)
         print("All DWH tables are ready.")
         return True
 
@@ -111,6 +112,8 @@ def etl_tmdb_to_dwh_dag_complete():
         client.insert_df('default.fact_movies', entries_df)
         print(f"Loaded {len(entries_df)} rows into fact_movies.")
 
-    create_dwh_tables() >> extract_transform_load(tables_ready=True)
+    tables_ready = create_dwh_tables()
+    extract_transform_load(tables_ready)
+
 
 etl_tmdb_to_dwh_dag_complete()
