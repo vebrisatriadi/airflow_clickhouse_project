@@ -85,7 +85,7 @@ The two pipelines must be run in order.
 2.  **Run the ETL Pipeline**: Once the data is downloaded, locate the `etl_tmdb_to_dwh` DAG. Before running, ensure you have created the required database connection in **Admin -> Connections** with the ID `clickhouse_manual` (see documentation above for details). Enable and trigger the DAG.
 
 ## 6. Try to Querying the DWH
-1. Open your query editor such as `DBeaver` or `TablePlus`, add ClichHouse connection with this following:
+1. Open your query editor such as `DBeaver` or `TablePlus`, add ClickHouse connection with this following:
    - Host: `localhost`
    - Port: `8123`
    - Database/Schema: `default`
