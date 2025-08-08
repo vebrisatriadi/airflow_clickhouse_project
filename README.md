@@ -112,3 +112,22 @@ Install the testing dependency and run the test suite with `pytest`:
 pip install pytest
 pytest
 ```
+
+## 8. Streaming with Flink
+
+This project includes a minimal Apache Flink setup for processing streaming
+data. The `docker-compose.yml` file defines **JobManager** and **TaskManager**
+services and mounts Python jobs from the `flink_jobs` directory.
+
+An example job `ratings_stream.py` demonstrates how to process a small stream of
+movie rating events. To submit the job manually:
+
+```bash
+docker-compose exec flink-jobmanager \
+  flink run -py /opt/flink/usrlib/ratings_stream.py
+```
+
+Airflow also contains a DAG (`flink_ratings_job`) that submits the same job using
+`BashOperator`, illustrating how Flink streaming tasks can be orchestrated
+alongside batch ETL workflows.
+
