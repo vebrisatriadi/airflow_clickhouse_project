@@ -103,3 +103,12 @@ LEFT JOIN bridge_movie_genres AS b ON f.movie_id = b.movie_id
 LEFT JOIN dim_genres AS g ON b.genre_id = g.genre_id
 GROUP BY g.genre_name;
 ```
+
+## 7. Testing
+
+Install the testing dependency and run the test suite with `pytest`:
+
+```bash
+pip install pytest
+pytest
+```

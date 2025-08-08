@@ -5,10 +5,11 @@ import pandas as pd
 import pendulum
 import clickhouse_connect
 import glob
-from datetime import datetime
 
 from airflow.decorators import dag, task
 from airflow.hooks.base import BaseHook
+
+from dags.transform import transform_movies
 
 def get_clickhouse_client():
     conn = BaseHook.get_connection('clickhouse_manual')
@@ -35,44 +36,24 @@ def etl_tmdb_to_dwh_dag_complete():
     def extract_transform_load(tables_ready: bool):
         if not tables_ready: raise ValueError("DWH tables are not ready.")
         json_files = glob.glob(os.path.join('/opt/airflow/data', '**', '*.json'), recursive=True)
-        
-        all_entries, all_genres, all_companies, all_entry_genres, all_entry_companies = [], [], [], [], []
+        raw_records = []
         print(f"Found {len(json_files)} files. Processing up to 3000 files.")
 
         for file_path in json_files[:3000]:
             try:
-                with open(file_path, 'r') as f: data = json.load(f)
-                if data.get('id') and (data.get('title') or data.get('name')):
-                    # Extract data
-                    entry_id = data['id']
-                    title = data.get('title') or data.get('name')
-                    raw_date = data.get('release_date') or data.get('first_air_date')
-                    release_date_obj = None
-                    if raw_date:
-                        try:
-                            release_date_obj = datetime.strptime(raw_date, '%Y-%m-%d').date()
-                        except (ValueError, TypeError):
-                            pass
-                    
-                    # Append to lists
-                    all_entries.append({'movie_id': entry_id, 
-                                        'title': title, 
-                                        'release_date': release_date_obj, 
-                                        'revenue': data.get('revenue', 0), 
-                                        'budget': data.get('budget', 0), 
-                                        'popularity': data.get('popularity', 0.0), 
-                                        'vote_average': data.get('vote_average', 0.0), 
-                                        'vote_count': data.get('vote_count', 0), 
-                                        'runtime': data.get('runtime')}
-                    )
-                    for g in data.get('genres', []):
-                        all_genres.append(g)
-                        all_entry_genres.append({'movie_id': entry_id, 'genre_id': g['id']})
-                    for c in data.get('production_companies', []):
-                        all_companies.append(c)
-                        all_entry_companies.append({'movie_id': entry_id, 'company_id': c['id']})
+                with open(file_path, 'r') as f:
+                    data = json.load(f)
+                raw_records.append(data)
             except Exception as e:
                 print(f"Skipping file {file_path} due to error: {e}")
+
+        (
+            all_entries,
+            all_genres,
+            all_companies,
+            all_entry_genres,
+            all_entry_companies,
+        ) = transform_movies(raw_records)
 
         if not all_entries:
             print("No valid entries found to load. Exiting.")
@@ -82,33 +63,29 @@ def etl_tmdb_to_dwh_dag_complete():
 
         # 1. Load Genre Dimension
         if all_genres:
-            dim_genres_df = pd.DataFrame(all_genres).drop_duplicates(subset=['id'])
-            dim_genres_df.rename(columns={'id': 'genre_id', 'name': 'genre_name'}, inplace=True)
-            final_genres_df = dim_genres_df[['genre_id', 'genre_name']]
-            client.insert_df('default.dim_genres', final_genres_df)
-            print(f"Loaded {len(final_genres_df)} unique rows into dim_genres.")
+            dim_genres_df = pd.DataFrame(all_genres)
+            client.insert_df('default.dim_genres', dim_genres_df)
+            print(f"Loaded {len(dim_genres_df)} unique rows into dim_genres.")
 
         # 2. Load Production Company Dimension
         if all_companies:
-            dim_companies_df = pd.DataFrame(all_companies).drop_duplicates(subset=['id'])
-            dim_companies_df.rename(columns={'id': 'company_id', 'name': 'company_name'}, inplace=True)
-            final_companies_df = dim_companies_df[['company_id', 'company_name']]
-            client.insert_df('default.dim_production_companies', final_companies_df)
-            print(f"Loaded {len(final_companies_df)} unique rows into dim_production_companies.")
-            
+            dim_companies_df = pd.DataFrame(all_companies)
+            client.insert_df('default.dim_production_companies', dim_companies_df)
+            print(f"Loaded {len(dim_companies_df)} unique rows into dim_production_companies.")
+
         # 3. Load Bridge Table
         if all_entry_genres:
-            bridge_genres_df = pd.DataFrame(all_entry_genres).drop_duplicates()
+            bridge_genres_df = pd.DataFrame(all_entry_genres)
             client.insert_df('default.bridge_movie_genres', bridge_genres_df)
             print(f"Loaded {len(bridge_genres_df)} rows into bridge_movie_genres.")
 
         if all_entry_companies:
-            bridge_companies_df = pd.DataFrame(all_entry_companies).drop_duplicates()
+            bridge_companies_df = pd.DataFrame(all_entry_companies)
             client.insert_df('default.bridge_movie_companies', bridge_companies_df)
             print(f"Loaded {len(bridge_companies_df)} rows into bridge_movie_companies.")
 
         # 4. Load Main Fact Table
-        entries_df = pd.DataFrame(all_entries).drop_duplicates(subset=['movie_id'])
+        entries_df = pd.DataFrame(all_entries)
         client.insert_df('default.fact_movies', entries_df)
         print(f"Loaded {len(entries_df)} rows into fact_movies.")
 
